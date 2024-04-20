@@ -1,11 +1,10 @@
-add_executable(DB2D db_2d.cpp)
-target_link_libraries(DB2d LINK_PUBLIC CabanaPD)
+add_executable(TwoBlocksColliding two_block_colliding.cpp)
+target_link_libraries(TwoBlocksColliding LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
 
-# add_executable(KalthoffWinkler kalthoff_winkler.cpp)
-# target_link_libraries(KalthoffWinkler LINK_PUBLIC CabanaPD)
+add_executable(DB2d db_2d.cpp)
+target_link_libraries(DB2d LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
 
-# add_executable(CrackBranching crack_branching.cpp)
-# target_link_libraries(CrackBranching LINK_PUBLIC CabanaPD)
+add_executable(DB2dBrute db_2d_without_nnps.cpp)
+target_link_libraries(DB2dBrute LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
 
-install(TARGETS DB2d DESTINATION ${CMAKE_INSTALL_BINDIR})
-# install(TARGETS ElasticWave KalthoffWinkler CrackBranching DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS TwoBlocksColliding DB2d DB2dBrute DESTINATION ${CMAKE_INSTALL_BINDIR})

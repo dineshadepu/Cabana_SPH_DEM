@@ -234,7 +234,7 @@ def set_wall_pressure_bc(d_x, d_y, d_z, d_au, d_av, d_aw, d_wij, d_p,
         d_p[i] = 0.
         d_wij[i] = 0.
 
-    for i in range(len(d_x)):
+    for i in prange(len(d_x)):
         for j in range(len(s_x)):
             # =========================
             # Precompute variables

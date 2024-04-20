@@ -1,15 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 # geometry imports
-from sph_dem.geometry import (
+from geometry import (
     hydrostatic_tank_2d,
     translate_system_with_left_corner_as_origin,
     create_tank_2d_from_block_2d)
-
-from sph_dem.fluids import (FluidsScheme,
-                            get_particle_array_fluid,
-                            get_particle_array_boundary)
+from pysph.base.utils import get_particle_array
+from pysph.examples.solid_mech.impact import add_properties
 
 from equations import (fluid_stage_1,
                        fluid_stage_2,
@@ -35,10 +34,10 @@ from equations_numba import (fluid_stage_1_numba,
 
 # GLOBAL VARIABLES
 fluid_length = 1.
-fluid_height = 0.5
+fluid_height = 1.
 
-tank_length = fluid_length
-tank_height = 1.2 * fluid_height
+tank_length = fluid_length * 2.
+tank_height = 1.5 * fluid_height
 tank_layers = 3
 
 dx = 0.1
@@ -59,10 +58,61 @@ b = 1.
 # numerical variable
 dt = 1e-4
 # tf = 100 * dt
-tf = 1.
+tf = 2.
 t = 0.
 step = 0
+pfreq = 10
 print("total steps are", tf / dt)
+
+
+def get_particle_array_fluid(name, x, y, z=0., m=0., h=0., rho=0., ):
+    pa = get_particle_array(name=name,
+                            x=x,
+                            y=y,
+                            z=z,
+                            h=h,
+                            rho=rho,
+                            m=m)
+    add_properties(pa, 'arho', 'aconcentration', 'concentration', 'diff_coeff',
+                   'ap', 'auhat', 'avhat', 'awhat',
+                   'uhat', 'vhat', 'what', 'p0', 'is_static')
+    add_properties(pa, 'm_frac')
+    pa.add_constant('c0_ref', 0.)
+    pa.add_constant('p0_ref', 0.)
+    pa.add_constant('n', 4.)
+    pa.m_frac[:] = 1.
+    # default property arrays to save out.
+    pa.set_output_arrays([
+        'x', 'y', 'z', 'u', 'v', 'w', 'rho', 'm', 'h', 'pid', 'gid', 'tag', 'p'
+    ])
+
+    pa.add_output_arrays(['concentration', 'diff_coeff'])
+
+    return pa
+
+
+def get_particle_array_boundary(constants=None, **props):
+    solids_props = [
+        'wij', 'm_frac', 'ug', 'vf', 'uf', 'wf', 'vg', 'wg'
+    ]
+
+    # set wdeltap to -1. Which defaults to no self correction
+    consts = {
+
+    }
+    if constants:
+        consts.update(constants)
+
+    pa = get_particle_array(constants=consts, additional_props=solids_props,
+                            **props)
+    pa.m_frac[:] = 1.
+
+    # default property arrays to save out.
+    pa.set_output_arrays([
+        'x', 'y', 'z', 'u', 'v', 'w', 'rho', 'm', 'h', 'pid', 'gid', 'tag', 'p'
+    ])
+
+    return pa
 
 
 def create_particles():
@@ -104,6 +154,10 @@ fluid, tank = create_particles()
 # plt.scatter(fluid.x, fluid.y)
 # plt.scatter(tank.x, tank.y)
 # plt.show()
+
+# create output directory for the images to be saved
+if not os.path.exists("./dam_break_output"):
+    os.makedirs("./dam_break_output")
 
 while t < tf:
     print(step)
@@ -154,13 +208,12 @@ while t < tf:
     fluid_stage_3_numba(fluid, dt)
 
     t += dt
-    if step % 10 == 0:
+    if step % pfreq == 0:
         plt.clf()
         plt.scatter(fluid.x, fluid.y)
         plt.scatter(tank.x, tank.y)
         # plt.show()
-        name = "output/db_" + str(step) + ".png"
+        name = "dam_break_output/db_" + str(step) + ".png"
         plt.savefig(name)
-
 
     step += 1
