@@ -1045,7 +1045,7 @@ void damBreak(const double fluid_spacing,
       solid_wall_pressure_bc(aosoa, gravity, dt,
 			     &verlet_list,
 			     bdry_limits);
-      clamp_wall_pressure(aosoa, dt, bdry_limits);
+      // clamp_wall_pressure(aosoa, dt, bdry_limits);
       // set_wall_velocity(aosoa, dt,
       // 			&verlet_list,
       // 			bdry_limits);

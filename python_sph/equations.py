@@ -221,7 +221,7 @@ def set_wall_pressure_bc(tank, fluid, gx, gy, gz):
             tank.wij[:] += WIJ
 
     for i in range(len(tank.x)):
-        if tank.wij[i] > 1e-14:
+        if tank.wij[i] > 1e-12:
             tank.p[i] /= tank.wij[i]
 
 

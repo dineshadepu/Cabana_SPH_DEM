@@ -53,6 +53,12 @@ using DataTypes = Cabana::MemberTypes<double[3], // position(0) (x, y, z)
 const int VectorLength = 8;
 using ExecutionSpace = Kokkos::DefaultExecutionSpace;
 using MemorySpace = typename ExecutionSpace::memory_space;
+
+
+// using ExecutionSpace = Kokkos::DefaultMemorySpace;
+// using MemorySpace = typename ExecutionSpace::memory_space;
+
+
 using DeviceType = Kokkos::Device<ExecutionSpace, MemorySpace>;
 using AoSoAType = Cabana::AoSoA<DataTypes, DeviceType, VectorLength>;
 
@@ -72,9 +78,16 @@ using AoSoAType = Cabana::AoSoA<DataTypes, DeviceType, VectorLength>;
 // auto aosoa_velocity_g = Cabana::slice<13>     ( aosoa,    "velocity_g");
 // auto aosoa_velocity_f = Cabana::slice<14>     ( aosoa,    "velocity_f");
 
+// using ListAlgorithm = Cabana::FullNeighborTag;
+// // using ListType =
+// //   Cabana::VerletList<MemorySpace, ListAlgorithm, Cabana::VerletLayout2D>;
+// using ListType =
+//   Cabana::VerletList<MemorySpace, ListAlgorithm, Cabana::VerletLayoutCSR,
+// 		     Cabana::TeamOpTag>;
+
 using ListAlgorithm = Cabana::FullNeighborTag;
-using ListType =
-  Cabana::VerletList<MemorySpace, ListAlgorithm, Cabana::VerletLayout2D>;
+using ListLayout = Cabana::VerletLayoutCSR;
+using ListType = Cabana::VerletList<MemorySpace,ListAlgorithm,ListLayout>;
 
 typedef Kokkos::View<double*>   ViewVectorType;
 typedef Kokkos::View<double**>  ViewMatrixType;
@@ -212,7 +225,7 @@ KOKKOS_INLINE_FUNCTION
 void compute_quintic_wij(double rij, double h, double *result){
   double h1 =  1. / h;
   double q =  rij * h1;
-  double fac = M_1_PI *  7. / 478. * h1 * h1;
+  double fac = 1 / M_PI *  7. / 478. * h1 * h1;
 
   double tmp3 = 3. - q;
   double tmp2 = 2. - q;
@@ -241,7 +254,7 @@ void compute_quintic_gradient_wij(double *xij, double rij, double h, double *res
   double h1 =  1. / h;
   double q =  rij * h1;
 
-  double fac = M_1_PI *  7. / 478. * h1 * h1;
+  double fac = 1. / M_PI *  7. / 478. * h1 * h1;
 
   double tmp3 = 3. - q;
   double tmp2 = 2. - q;
@@ -528,6 +541,10 @@ void solid_wall_pressure_bc(AoSoAType & aosoa, ViewVectorType & gravity, double 
 	  End: common to all equations in SPH.
 	  ====================================
 	*/
+
+	// if (i == 176) {
+	//   std::cout << "176 boundary particle \n" << std::endl;
+	// }
 	double tmp1 = (gravity[0] - aosoa_acc( i, 0 )) * pos_ij [ 0 ];
 	double tmp2 = (gravity[1] - aosoa_acc( i, 1 )) * pos_ij [ 1 ];
 	double tmp3 = (gravity[2] - aosoa_acc( i, 2 )) * pos_ij [ 2 ];
@@ -551,7 +568,7 @@ void solid_wall_pressure_bc(AoSoAType & aosoa, ViewVectorType & gravity, double 
 
   auto divide_p_by_wij_lambda_func = KOKKOS_LAMBDA( const int i )
     {
-      if (aosoa_sum_wij( i ) > 1e-14){
+      if (aosoa_sum_wij( i ) > 1e-12){
 	aosoa_p( i ) /= aosoa_sum_wij( i );
       }
     };
@@ -568,7 +585,7 @@ void clamp_wall_pressure(AoSoAType & aosoa, double dt, int * limits){
 
   auto clamp_p_lambda_func = KOKKOS_LAMBDA( const int i )
     {
-      if (aosoa_p( i ) < 1e-12){
+      if (aosoa_p( i ) < 0.){
 	aosoa_p( i ) = 0.;
       }
     };
@@ -869,7 +886,7 @@ void damBreak(const double fluid_spacing,
       x_fluid[i] += (tank_layers - 2) * fluid_spacing;
       y_fluid[i] += (tank_layers + 1) * fluid_spacing;
       x_fluid[i] -= (1) * fluid_spacing;
-      // y_fluid[i] += (2) * fluid_spacing;
+      y_fluid[i] += (2) * fluid_spacing;
     }
   // for ( std::size_t i = 0; i < x_fluid.size(); ++i )
   //   {
@@ -1050,9 +1067,9 @@ void damBreak(const double fluid_spacing,
   // create the neighbor list
   // ================================================
   // ================================================
-  double neighborhood_radius = 6. * fluid_spacing;
-  double grid_min[3] = { -2.0, 0.0, -neighborhood_radius };
-  double grid_max[3] = { 2.2 * tank_length, 2.2 * tank_height, 1. * neighborhood_radius };
+  double neighborhood_radius = 4. * fluid_spacing;
+  double grid_min[3] = { -2.0, -1., -neighborhood_radius - fluid_spacing};
+  double grid_max[3] = { 2.2 * tank_length, 2.2 * tank_height, neighborhood_radius + fluid_spacing};
   // double grid_min[3] = { 0.0, -4.0, 0.0 };
   // double grid_max[3] = { 4.1, 4.0, 0.0 };
   double cell_ratio = 1.0;
