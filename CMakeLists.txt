@@ -27,7 +27,7 @@ macro(CabanaPD_check_enabled)
 endmacro()
 
 CabanaPD_check_enabled( OPTION MPI )
-CabanaPD_check_enabled( OPTION CAJITA )
+# CabanaPD_check_enabled( OPTION CAJITA )
 CabanaPD_check_enabled( OPTION SILO )
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/CabanaPD_Config.cmakein
