@@ -894,7 +894,7 @@ void damBreak(const double fluid_spacing,
   auto vref = sqrt(2. * abs(gy) * fluid_height);
   auto c0 = 10. * vref;
   // auto fluid_viscosity = 1e-4;
-  auto alpha = 0.05;
+  auto alpha = 0.01;
   auto p0 = c0*c0 * fluid_rho;
   auto rho0 = fluid_rho;
   ViewVectorType b_rho0_p0( "b_rho0_p0", 3 );
@@ -925,7 +925,8 @@ void damBreak(const double fluid_spacing,
 
   // integration related variables
   double h = 1. * fluid_spacing;
-  double dt = 0.25 * h / (c0 + vref);
+  // double dt = 0.25 * h / (c0 + vref);
+  double dt = 1e-5;
   std::cout << "dt is :" << dt << std::endl;
   auto final_time = t_final;
   auto time = 0.;

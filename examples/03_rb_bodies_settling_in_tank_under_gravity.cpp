@@ -1696,9 +1696,10 @@ void rb_freely_rotating_square_bodies(const double body_spacing,
       rigid_body_particles_stage_2(aosoa, rb, dt, rigid_limits);
 
       // Compute the neighbours
-      ListType verlet_list( aosoa_position, 0,
-			    aosoa_position.size(), neighborhood_radius,
-			    cell_ratio, grid_min, grid_max );
+      verlet_list.build( aosoa_position, 0, aosoa_position.size(), neighborhood_radius, cell_ratio, grid_min, grid_max );
+      // ListType verlet_list( aosoa_position, 0,
+      // 			    aosoa_position.size(), neighborhood_radius,
+      // 			    cell_ratio, grid_min, grid_max );
 
       compute_force_on_rigid_body_particles(aosoa, dt,
 					    &verlet_list,

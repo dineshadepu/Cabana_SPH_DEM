@@ -16,6 +16,17 @@ target_link_libraries(02RBCollidingBodies LINK_PUBLIC Cabana::cabanacore Cabana:
 add_executable(03RBBodiesSettling 03_rb_bodies_settling_in_tank_under_gravity.cpp)
 target_link_libraries(03RBBodiesSettling LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
 
-install(TARGETS 03RBBodiesSettling 02RBCollidingBodies 01RBFreelyRotatingBodies TwoBlocksColliding DB2d DB2dBrute DESTINATION ${CMAKE_INSTALL_BINDIR})
+add_executable(01DEM 01_dem_two_head_on_collision.cpp)
+target_link_libraries(01DEM LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
+
+add_executable(NNPSBug nnps_bug.cpp)
+target_link_libraries(NNPSBug LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
+
+add_executable(NNPSBugPosition nnps_bug_position.cpp)
+target_link_libraries(NNPSBugPosition LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
+
+install(TARGETS NNPSBugPosition NNPSBug 01DEM 03RBBodiesSettling 02RBCollidingBodies 01RBFreelyRotatingBodies TwoBlocksColliding DB2d DB2dBrute DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+
 
 add_definitions(-w)

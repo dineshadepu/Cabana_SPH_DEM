@@ -24,6 +24,7 @@ manuscript/figures/
 manuscript/auto/
 code/results/
 manuscript/*.pdf
+build_cpu/
 
 
 *.pyc
