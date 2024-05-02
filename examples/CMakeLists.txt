@@ -19,13 +19,19 @@ target_link_libraries(03RBBodiesSettling LINK_PUBLIC Cabana::cabanacore Cabana::
 add_executable(01DEM 01_dem_two_head_on_collision.cpp)
 target_link_libraries(01DEM LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
 
+add_executable(02DEMManyParticles 02_dem_many_particles_collision.cpp)
+target_link_libraries(02DEMManyParticles LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
+
+add_executable(TestDEM01MultipleContactsAtOnce test_dem_01_multiple_contacts_at_once.cpp)
+target_link_libraries(TestDEM01MultipleContactsAtOnce LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
+
 add_executable(NNPSBug nnps_bug.cpp)
 target_link_libraries(NNPSBug LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
 
 add_executable(NNPSBugPosition nnps_bug_position.cpp)
 target_link_libraries(NNPSBugPosition LINK_PUBLIC Cabana::cabanacore Cabana::Cajita)
 
-install(TARGETS NNPSBugPosition NNPSBug 01DEM 03RBBodiesSettling 02RBCollidingBodies 01RBFreelyRotatingBodies TwoBlocksColliding DB2d DB2dBrute DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS NNPSBugPosition NNPSBug TestDEM01MultipleContactsAtOnce 02DEMManyParticles 01DEM 03RBBodiesSettling 02RBCollidingBodies 01RBFreelyRotatingBodies TwoBlocksColliding DB2d DB2dBrute DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 
 

@@ -85,7 +85,7 @@ particles_0xmfDisplay = Show(particles_0xmf, renderView1, 'UnstructuredGridRepre
 
 particles_0xmfDisplay.SetRepresentationType('Point Gaussian')
 
-particles_0xmfDisplay.GaussianRadius = 0.025
+particles_0xmfDisplay.GaussianRadius = 0.01
 
 ColorBy(particles_0xmfDisplay, ('POINTS', 'rb_mass'))
 
