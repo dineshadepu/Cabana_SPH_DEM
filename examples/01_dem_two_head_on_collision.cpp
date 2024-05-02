@@ -126,8 +126,8 @@ void rigid_body_stage_1(RBAoSoA rb, double dt){
       rb_velocity( i, 1 ) += half_dt * rb_force( i, 1 ) * mass_i_1;
       rb_velocity( i, 2 ) += half_dt * rb_force( i, 2 ) * mass_i_1;
 
-      rb_ang_vel( i, 0 ) += half_dt * rb_torque( i, 2 ) * rb_moi_1( i );
-      rb_ang_vel( i, 1 ) += half_dt * rb_torque( i, 2 ) * rb_moi_1( i );
+      rb_ang_vel( i, 0 ) += half_dt * rb_torque( i, 0 ) * rb_moi_1( i );
+      rb_ang_vel( i, 1 ) += half_dt * rb_torque( i, 1 ) * rb_moi_1( i );
       rb_ang_vel( i, 2 ) += half_dt * rb_torque( i, 2 ) * rb_moi_1( i );
     };
   Kokkos::RangePolicy<ExecutionSpace> policy( 0, rb_velocity.size() );
@@ -149,6 +149,146 @@ void rigid_body_stage_2(RBAoSoA rb, double dt){
   Kokkos::RangePolicy<ExecutionSpace> policy( 0, rb_velocity.size() );
   Kokkos::parallel_for( "CabanaRB:Integrator:RBStage2", policy,
 			rb_stage_2_lambda_func );
+}
+
+
+void update_tangential_contacts(RBAoSoA rb, double dt, int * limits){
+  auto rb_position = Cabana::slice<0>     ( rb,    "rb_position");
+  auto rb_limits = Cabana::slice<1>       ( rb,      "rb_limits");
+  auto rb_ids = Cabana::slice<2>          ( rb,         "rb_ids");
+  auto rb_velocity = Cabana::slice<3>     ( rb,    "rb_velocity");
+  auto rb_force = Cabana::slice<4>        ( rb,       "rb_force");
+  auto rb_torque = Cabana::slice<5>       ( rb,      "rb_torque");
+  auto rb_lin_acc = Cabana::slice<6>      ( rb,     "rb_lin_acc");
+  auto rb_ang_acc = Cabana::slice<7>      ( rb,     "rb_ang_acc");
+  auto rb_ang_mom = Cabana::slice<8>      ( rb,     "rb_ang_mom");
+  auto rb_ang_vel = Cabana::slice<9>      ( rb,     "rb_ang_vel");
+  auto rb_rotation_matrix = Cabana::slice<10>     ( rb,     "rb_rotation_matrix");
+  auto rb_mass = Cabana::slice<11>        ( rb,        "rb_mass");
+  auto rb_density = Cabana::slice<12>     ( rb,     "rb_density");
+  auto rb_body_moi = Cabana::slice<13>    ( rb,    "rb_body_moi");
+  auto rb_inv_body_moi = Cabana::slice<14>( rb,    "rb_inv_body_moi");
+  auto rb_global_moi = Cabana::slice<15>  ( rb,    "rb_global_moi");
+  auto rb_inv_global_moi = Cabana::slice<16>( rb,    "rb_inv_global_moi");
+  auto rb_rotation_angle = Cabana::slice<17>  ( rb,    "rb_rotation_angle");
+  auto rb_I_zz = Cabana::slice<18>( rb,    "rb_I_zz");
+  auto rb_rad_s = Cabana::slice<19>( rb,    "rb_rad_s");
+  auto rb_moi_1 = Cabana::slice<20>( rb,    "rb_moi_1");
+  auto rb_E = Cabana::slice<21>( rb,    "rb_E");
+  auto rb_nu = Cabana::slice<22>( rb,    "rb_nu");
+  auto rb_contacts_count = Cabana::slice<23>( rb,    "rb_contact_count");
+  auto rb_contact_idx = Cabana::slice<24>( rb,    "rb_contact_idx");
+  auto rb_contact_tng_frc = Cabana::slice<25>( rb,    "rb_contact_tng_frc");
+  auto rb_contact_tng_disp = Cabana::slice<26>( rb,    "rb_contact_tng_disp");
+  auto rb_contact_fn_magn = Cabana::slice<27>( rb,    "rb_contact_fn_magn");
+  auto rb_contact_normal_overlap = Cabana::slice<28>( rb,    "rb_contact_normal_overlap");
+  auto rb_G = Cabana::slice<29>( rb,    "rb_G");
+
+
+  auto half_dt = dt * 0.5;
+  auto update_tangential_contacts_lambda_func = KOKKOS_LAMBDA( const int i )
+    {
+      int count = 0;
+      int k = 0;
+      int idx_total_ctcs = rb_contacts_count( i );
+      int last_idx_tmp = rb_contacts_count( i ) - 1;
+      int sidx = -1;
+      // loop over all the contacts of particle d_idx
+      while (count < idx_total_ctcs){
+	// The index of the particle with which
+	// d_idx in contact is
+	sidx = rb_contact_idx( i, k );
+	if (sidx == -1){
+	  break;
+	}
+	else {
+	  double pos_i[3] = {rb_position( i, 0 ),
+	    rb_position( i, 1 ),
+	    rb_position( i, 2 )};
+
+	  double pos_j[3] = {rb_position( sidx, 0 ),
+	    rb_position( sidx, 1 ),
+	    rb_position( sidx, 2 )};
+
+	  double pos_ij[3] = {rb_position( i, 0 ) - rb_position( sidx, 0 ),
+	    rb_position( i, 1 ) - rb_position( sidx, 1 ),
+	    rb_position( i, 2 ) - rb_position( sidx, 2 )};
+
+	  // squared distance
+	  double r2ij = pos_ij[0] * pos_ij[0] + pos_ij[1] * pos_ij[1] + pos_ij[2] * pos_ij[2];
+	  // distance between i and j
+	  double rij = sqrt(r2ij);
+	  // Find the overlap amount
+	  double overlap =  rb_rad_s( i ) + rb_rad_s( sidx ) - rij;
+
+	  if (overlap <= 0.) {
+	    // if the swap index is the current index then
+	    // simply make it to null contact.
+	    if (k == last_idx_tmp){
+	      rb_contact_idx( i, k ) = -1;
+	      rb_contact_tng_frc( i, k, 0 ) = 0.;
+	      rb_contact_tng_frc( i, k, 1 ) = 0.;
+	      rb_contact_tng_frc( i, k, 2 ) = 0.;
+	      rb_contact_tng_disp( i, k, 0 ) = 0.;
+	      rb_contact_tng_disp( i, k, 1 ) = 0.;
+	      rb_contact_tng_disp( i, k, 2 ) = 0.;
+	    }
+	    else {
+	      // swap the current tracking index with the final
+	      // contact index
+	      rb_contact_idx( i, k ) = rb_contact_idx( i, last_idx_tmp );
+	      rb_contact_idx( i, last_idx_tmp ) = -1;
+
+	      // swap tangential x frc
+	      rb_contact_tng_frc( i, k, 0 ) = rb_contact_tng_frc( i, last_idx_tmp, 0 );
+	      rb_contact_tng_frc( i, last_idx_tmp, 0 ) = 0.;
+
+	      // swap tangential y frc
+	      rb_contact_tng_frc( i, k, 1 ) = rb_contact_tng_frc( i, last_idx_tmp, 1 );
+	      rb_contact_tng_frc( i, last_idx_tmp, 1 ) = 0.;
+
+	      // swap tangential z frc
+	      rb_contact_tng_frc( i, k, 2 ) = rb_contact_tng_frc( i, last_idx_tmp, 2 );
+	      rb_contact_tng_frc( i, last_idx_tmp, 2 ) = 0.;
+
+	      // swap tangential x displacement
+	      rb_contact_tng_disp( i, k, 0 ) = rb_contact_tng_disp( i, last_idx_tmp, 0 );
+	      rb_contact_tng_disp( i, last_idx_tmp, 0 ) = 0.;
+
+	      // swap tangential y displacement
+	      rb_contact_tng_disp( i, k, 1 ) = rb_contact_tng_disp( i, last_idx_tmp, 1 );
+	      rb_contact_tng_disp( i, last_idx_tmp, 1 ) = 0.;
+
+	      // swap tangential z displacement
+	      rb_contact_tng_disp( i, k, 2 ) = rb_contact_tng_disp( i, last_idx_tmp, 2 );
+	      rb_contact_tng_disp( i, last_idx_tmp, 2 ) = 0.;
+
+	      // swap normal force and magnitude
+	      rb_contact_fn_magn( i, k ) = rb_contact_fn_magn( i, last_idx_tmp );
+	      rb_contact_fn_magn( i, last_idx_tmp ) = 0.;
+
+	      rb_contact_normal_overlap( i, k ) = rb_contact_normal_overlap( i, last_idx_tmp );
+	      rb_contact_normal_overlap( i, last_idx_tmp ) = 0.;
+
+	      // decrease the last_idx_tmp, since we swapped it to
+	      // -1
+	      last_idx_tmp -= 1;
+	    }
+
+	    // decrement the total contacts of the particle
+	    rb_contacts_count( i ) -= 1;
+	  }
+	  else
+	    {
+	      k = k + 1;
+	    }
+	}
+	count += 1;
+      }
+    };
+  Kokkos::RangePolicy<ExecutionSpace> policy( 0, rb_mass.size());
+  Kokkos::parallel_for( "CabanaSPH:Integrator:UpdateTngCnts", policy,
+			update_tangential_contacts_lambda_func );
 }
 
 
@@ -283,6 +423,9 @@ void compute_force_on_dem_particles(RBAoSoA rb, double dt,
 	    rb_contact_tng_frc ( i, found_at, 0 ) = 0.;
 	    rb_contact_tng_frc ( i, found_at, 1 ) = 0.;
 	    rb_contact_tng_frc ( i, found_at, 2 ) = 0.;
+
+	    rb_contact_fn_magn ( i, found_at ) = 0.;
+	    rb_contact_normal_overlap ( i, found_at ) = 0.;
 	  }
 
 	  // =====================================================
@@ -307,117 +450,105 @@ void compute_force_on_dem_particles(RBAoSoA rb, double dt,
 
 	  double fn_magn = kn * overlap;
 
+	  rb_contact_fn_magn ( i, found_at ) = fn_magn;
+	  rb_contact_normal_overlap ( i, found_at ) = overlap;
+
 	  double fn_x = fn_magn * nij_x;
 	  double fn_y = fn_magn * nij_y;
 	  double fn_z = fn_magn * nij_z;
 
-	  // // Incremenet the tangential force and add it to the total force
-	  // // check if there is relative motion
-	  // double vij_magn = sqrt(uij*uij + vij*vij + wij*wij);
-	  // if (vij_magn < 1e-12) {
-	  //   // make the tangential displacement
-	  //   rb_contact_tng_disp ( i, found_at, 0 ) = 0.;
-	  //   rb_contact_tng_disp ( i, found_at, 1 ) = 0.;
-	  //   rb_contact_tng_disp ( i, found_at, 2 ) = 0.;
+	  // Incremenet the tangential force and add it to the total force
+	  // check if there is relative motion
+	  double vij_magn = sqrt(uij*uij + vij*vij + wij*wij);
+	  if (vij_magn < 1e-12) {
+	    // make the tangential displacement
+	    rb_contact_tng_disp ( i, found_at, 0 ) = 0.;
+	    rb_contact_tng_disp ( i, found_at, 1 ) = 0.;
+	    rb_contact_tng_disp ( i, found_at, 2 ) = 0.;
 
-	  //   // make the tangential tangential force
-	  //   rb_contact_tng_frc ( i, found_at, 0 ) = 0.;
-	  //   rb_contact_tng_frc ( i, found_at, 1 ) = 0.;
-	  //   rb_contact_tng_frc ( i, found_at, 2 ) = 0.;
+	    // make the tangential tangential force
+	    rb_contact_tng_frc ( i, found_at, 0 ) = 0.;
+	    rb_contact_tng_frc ( i, found_at, 1 ) = 0.;
+	    rb_contact_tng_frc ( i, found_at, 2 ) = 0.;
 
-	  //   // // # repulsive force
-	  //   // d_fn_x[t2] = fn_x;
-	  //   // d_fn_y[t2] = fn_y;
-	  //   // d_fn_z[t2] = fn_z;
+	    // // # repulsive force
+	    // d_fn_x[t2] = fn_x;
+	    // d_fn_y[t2] = fn_y;
+	    // d_fn_z[t2] = fn_z;
+	  }
+	  else{
+	    // the tangential vector is
+	    double tx_tmp = uij - vn_x;
+	    double ty_tmp = vij - vn_y;
+	    double tz_tmp = wij - vn_z;
 
-	  // }
-	  // else{
-	  //   // the tangential vector is
-	  //   double tx_tmp = uij - vn_x;
-	  //   double ty_tmp = vij - vn_y;
-	  //   double tz_tmp = wij - vn_z;
+	    double ti_magn = pow(tx_tmp*tx_tmp + ty_tmp*ty_tmp + tz_tmp*tz_tmp, 0.5);
 
-	  //   double ti_magn = pow(tx_tmp*tx_tmp + ty_tmp*ty_tmp + tz_tmp*tz_tmp, 0.5);
+	    double ti_x = 0.;
+	    double ti_y = 0.;
+	    double ti_z = 0.;
 
-	  //   double ti_x = 0.;
-	  //   double ti_y = 0.;
-	  //   double ti_z = 0.;
+	    if (ti_magn > 1e-12){
+	      ti_x = tx_tmp / ti_magn;
+	      ti_y = ty_tmp / ti_magn;
+	      ti_z = tz_tmp / ti_magn;
+	    }
 
-	  //   if (ti_magn > 1e-12){
-	  //     ti_x = tx_tmp / ti_magn;
-	  //     ti_y = ty_tmp / ti_magn;
-	  //     ti_z = tz_tmp / ti_magn;
-	  //   }
+	    // // save the normals to output and view in viewer
+	    // d_ti_x[t2] = ti_x;
+	    // d_ti_y[t2] = ti_y;
+	    // d_ti_z[t2] = ti_z;
 
-	  //   // // save the normals to output and view in viewer
-	  //   // d_ti_x[t2] = ti_x;
-	  //   // d_ti_y[t2] = ti_y;
-	  //   // d_ti_z[t2] = ti_z;
+	    // this is correct
+	    double delta_lt_x_star = rb_contact_tng_disp ( i, found_at, 0 ) + uij * dt;
+	    double delta_lt_y_star = rb_contact_tng_disp ( i, found_at, 1 ) + vij * dt;
+	    double delta_lt_z_star = rb_contact_tng_disp ( i, found_at, 2 ) + wij * dt;
 
-	  //   // this is correct
-	  //   double delta_lt_x_star = rb_contact_tng_disp ( i, found_at, 0 ) + uij * dt;
-	  //   double delta_lt_y_star = rb_contact_tng_disp ( i, found_at, 1 ) + vij * dt;
-	  //   double delta_lt_z_star = rb_contact_tng_disp ( i, found_at, 2 ) + wij * dt;
+	    double delta_lt_dot_ti = (delta_lt_x_star * ti_x +
+				      delta_lt_y_star * ti_y +
+				      delta_lt_z_star * ti_z);
 
-	  //   double delta_lt_dot_ti = (delta_lt_x_star * ti_x +
-	  // 			      delta_lt_y_star * ti_y +
-	  // 			      delta_lt_z_star * ti_z);
+	    rb_contact_tng_disp ( i, found_at, 0 ) = delta_lt_dot_ti * ti_x;
+	    rb_contact_tng_disp ( i, found_at, 1 ) = delta_lt_dot_ti * ti_y;
+	    rb_contact_tng_disp ( i, found_at, 2 ) = delta_lt_dot_ti * ti_z;
 
-	  //   rb_contact_tng_disp ( i, found_at, 0 ) = delta_lt_dot_ti * ti_x;
-	  //   rb_contact_tng_disp ( i, found_at, 1 ) = delta_lt_dot_ti * ti_y;
-	  //   rb_contact_tng_disp ( i, found_at, 2 ) = delta_lt_dot_ti * ti_z;
+	    double ft_x_star = -kt * rb_contact_tng_disp ( i, found_at, 0 );
+	    double ft_y_star = -kt * rb_contact_tng_disp ( i, found_at, 1 );
+	    double ft_z_star = -kt * rb_contact_tng_disp ( i, found_at, 2 );
 
-	  //   // double ft_x_star = -kn_kt_fric_coeff[1] * aosoa_tng_disp ( i, found_at, 0 );
-	  //   // double ft_y_star = -kn_kt_fric_coeff[1] * aosoa_tng_disp ( i, found_at, 1 );
-	  //   // double ft_z_star = -kn_kt_fric_coeff[1] * aosoa_tng_disp ( i, found_at, 2 );
-	  //   double ft_x_star = -kt * rb_contact_tng_disp ( i, found_at, 0 );
-	  //   double ft_y_star = -kt * rb_contact_tng_disp ( i, found_at, 1 );
-	  //   double ft_z_star = -kt * rb_contact_tng_disp ( i, found_at, 2 );
+	    double ft_magn = pow(ft_x_star*ft_x_star + ft_y_star*ft_y_star + ft_z_star*ft_z_star, 0.5);
+	    double fn_magn = pow(fn_x*fn_x + fn_y*fn_y + fn_z*fn_z, 0.5);
 
-	  //   double ft_magn = pow(ft_x_star*ft_x_star + ft_y_star*ft_y_star + ft_z_star*ft_z_star, 0.5);
-	  //   double fn_magn = pow(fn_x*fn_x + fn_y*fn_y + fn_z*fn_z, 0.5);
+	    double ft_magn_star = ft_magn;
+	    if (ft_magn_star > fric_coeff * fn_magn){
+	      ft_magn_star = fric_coeff * fn_magn;
+	    }
+	    // compute the tangential force, by equation 27
+	    rb_contact_tng_frc ( i, found_at, 0 ) = -ft_magn_star * ti_x;
+	    rb_contact_tng_frc ( i, found_at, 1 ) = -ft_magn_star * ti_y;
+	    rb_contact_tng_frc ( i, found_at, 2 ) = -ft_magn_star * ti_z;
 
-	  //   double ft_magn_star = ft_magn;
-	  //   if (ft_magn_star > fric_coeff * fn_magn){
-	  //     ft_magn_star = fric_coeff * fn_magn;
-	  //   }
-	  //   // compute the tangential force, by equation 27
-	  //   rb_contact_tng_frc ( i, found_at, 0 ) = -ft_magn_star * ti_x;
-	  //   rb_contact_tng_frc ( i, found_at, 1 ) = -ft_magn_star * ti_y;
-	  //   rb_contact_tng_frc ( i, found_at, 2 ) = -ft_magn_star * ti_z;
+	    // reset the spring length
+	    double modified_delta_lt_x = -rb_contact_tng_frc ( i, found_at, 0 ) / kt;
+	    double modified_delta_lt_y = -rb_contact_tng_frc ( i, found_at, 1 ) / kt;
+	    double modified_delta_lt_z = -rb_contact_tng_frc ( i, found_at, 2 ) / kt;
 
-	  //   // reset the spring length
-	  //   double modified_delta_lt_x = -rb_contact_tng_frc ( i, found_at, 0 ) / kt;
-	  //   double modified_delta_lt_y = -rb_contact_tng_frc ( i, found_at, 1 ) / kt;
-	  //   double modified_delta_lt_z = -rb_contact_tng_frc ( i, found_at, 2 ) / kt;
+	    // repulsive force
+	    rb_contact_fn_magn ( i, found_at ) = fn_magn;
+	  }
 
-	  //   double lt_magn = pow(modified_delta_lt_x*modified_delta_lt_x + modified_delta_lt_y*modified_delta_lt_y +
-	  // 			 modified_delta_lt_z*modified_delta_lt_z, 0.5);
+	  double ft_x = rb_contact_tng_frc ( i, found_at, 0 );
+	  double ft_y = rb_contact_tng_frc ( i, found_at, 1 );
+	  double ft_z = rb_contact_tng_frc ( i, found_at, 2 );
 
-	  //   rb_contact_tng_disp ( i, found_at, 0 ) = modified_delta_lt_x / lt_magn;
-	  //   rb_contact_tng_disp ( i, found_at, 1 ) = modified_delta_lt_y / lt_magn;
-	  //   rb_contact_tng_disp ( i, found_at, 2 ) = modified_delta_lt_z / lt_magn;
+	  rb_force( i, 0 ) += fn_x + ft_x;
+	  rb_force( i, 1 ) += fn_y + ft_y;
+	  rb_force( i, 2 ) += fn_z + ft_z;
 
-	  //   // repulsive force
-	  //   rb_contact_fn_magn ( i, found_at ) = fn_magn;
-	  // }
-	  // rb_force( i, 0 ) += fn_x + rb_contact_tng_frc ( i, found_at, 0 );
-	  // rb_force( i, 1 ) += fn_y + rb_contact_tng_frc ( i, found_at, 1 );
-	  // rb_force( i, 2 ) += fn_z + rb_contact_tng_frc ( i, found_at, 2 );
-
-	  // // torque = n cross F;
-	  // double ft_x = rb_contact_tng_frc ( i, found_at, 0 );
-	  // double ft_y = rb_contact_tng_frc ( i, found_at, 1 );
-	  // double ft_z = rb_contact_tng_frc ( i, found_at, 2 );
-
-	  // rb_torque( i, 0 ) += (nij_y * ft_z - nij_z * ft_y) * radius_i;
-	  // rb_torque( i, 1 ) += (nij_z * ft_x - nij_x * ft_z) * radius_i;
-	  // rb_torque( i, 2 ) += (nij_x * ft_y - nij_y * ft_x) * radius_i;
-
-	  // Delete these three once the tangential force is fixed
-	  rb_force( i, 0 ) += fn_x;
-	  rb_force( i, 1 ) += fn_y;
-	  rb_force( i, 2 ) += fn_z;
+	  // torque = n cross F;
+	  rb_torque( i, 0 ) += (nij_y * ft_z - nij_z * ft_y) * radius_i;
+	  rb_torque( i, 1 ) += (nij_z * ft_x - nij_x * ft_z) * radius_i;
+	  rb_torque( i, 2 ) += (nij_x * ft_y - nij_y * ft_x) * radius_i;
 	}
 
       }
@@ -481,8 +612,8 @@ void rigid_body_stage_3(RBAoSoA rb, double dt){
       rb_velocity( i, 1 ) += half_dt * rb_force( i, 1 ) * mass_i_1;
       rb_velocity( i, 2 ) += half_dt * rb_force( i, 2 ) * mass_i_1;
 
-      rb_ang_vel( i, 0 ) += half_dt * rb_torque( i, 2 ) * rb_moi_1( i );
-      rb_ang_vel( i, 1 ) += half_dt * rb_torque( i, 2 ) * rb_moi_1( i );
+      rb_ang_vel( i, 0 ) += half_dt * rb_torque( i, 0 ) * rb_moi_1( i );
+      rb_ang_vel( i, 1 ) += half_dt * rb_torque( i, 1 ) * rb_moi_1( i );
       rb_ang_vel( i, 2 ) += half_dt * rb_torque( i, 2 ) * rb_moi_1( i );
     };
   Kokkos::RangePolicy<ExecutionSpace> policy( 0, rb_velocity.size() );
@@ -672,17 +803,9 @@ void rb_freely_rotating_square_bodies(const double body_spacing,
   std::vector<int> is_rb;
   std::vector<int> body_id;
 
-  ViewVectorType x( "x", 2 );
-  ViewVectorType y( "y", 2 );
-  ViewVectorType z( "z", 2 );
-  x[0] = 0.;
-  x[1] = rigid_body_radius * 2 + rigid_body_radius / 10;
-
-  y[0] = 0.;
-  y[1] = 0.;
-
-  z[0] = 0.;
-  z[1] = 0.;
+  std::vector<double> x = {0., rigid_body_radius * 2 + rigid_body_radius / 10};
+  std::vector<double> y = {0., 0.};
+  std::vector<double> z = {0., 0.};
 
   /*
     ================================================
@@ -769,6 +892,9 @@ void rb_freely_rotating_square_bodies(const double body_spacing,
       }
       // This is only set explicitly for this example
       rb_host_velocity ( i, 0 ) = pow( -1, i) * u_rb;
+      // rb_host_velocity ( i, 1 ) = pow( -1, i+1) * u_rb / 10.;
+      rb_host_velocity ( i, 1 ) = 0.;
+      rb_host_velocity ( i, 2 ) = pow( -1, i+1) * u_rb / 10.;
 
       for ( std::size_t j = 0; j < 9; ++j ) {
 	rb_host_rotation_matrix( i, j ) = 0.;
@@ -809,6 +935,8 @@ void rb_freely_rotating_square_bodies(const double body_spacing,
   // copy it back to aosoa
   Cabana::deep_copy( rb, rb_host );
 
+  int rigid_limits[2] = {0, 2};
+
   output_rb_data(rb, num_particles, 0, time);
   // ================================================
   // ================================================
@@ -848,22 +976,24 @@ void rb_freely_rotating_square_bodies(const double body_spacing,
 			 cell_ratio, grid_min, grid_max );
 
       body_force_rigid_body(rb, gravity, dt);
+
+      update_tangential_contacts(rb, dt, rigid_limits);
       compute_force_on_dem_particles(rb, dt,
 				     &verlet_list, 0.1);
 
       rigid_body_stage_3(rb, dt);
 
       if ( step % print_freq == 0 )
-	{
+	  {
 
-	  std::cout << "Time is:" << time << std::endl;
-	  output_rb_data(rb, total_no_particles, step, time);
-	}
+	    std::cout << "Time is:" << time << std::endl;
+	    output_rb_data(rb, total_no_particles, step, time);
+	  }
 
-      time += dt;
+	time += dt;
 
+      }
     }
-}
 
 int main( int argc, char* argv[] )
 {
