@@ -53,6 +53,7 @@ MESSAGE(STATUS "CabanaPD Revision = '${CabanaPD_GIT_COMMIT_HASH}'")
 ##---------------------------------------------------------------------------##
 add_subdirectory(src)
 add_subdirectory(examples)
+add_subdirectory(examples_cabana_dem)
 
 ##---------------------------------------------------------------------------##
 ## Clang format
