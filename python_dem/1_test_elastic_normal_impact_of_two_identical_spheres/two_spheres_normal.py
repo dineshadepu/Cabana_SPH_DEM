@@ -249,8 +249,8 @@ def run():
     )
     overlap_analytical, fn_analytical= data_fn_overlap_analytical[:, 0], data_fn_overlap_analytical[:, 1]
     plt.scatter(overlap_analytical, fn_analytical, label='Analytical')
-    plt.plot(overlap, fn, label='DEM')
-    plt.xlabel('Normal contact displacement (micro meters)')
+    plt.plot(overlap, fn, "-", color="red", label='DEM')
+    plt.xlabel(r'Normal contact displacement ($\mu$m)')
     plt.ylabel('Normal contact force (KN)')
     plt.legend()
     fig = os.path.join(directory, "fn_overlap.pdf")
